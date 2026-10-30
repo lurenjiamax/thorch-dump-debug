@@ -1,0 +1,22 @@
+pkgname=thorch-dump-debug
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Opt-in AYN Thor hardlockup and panic firmware dump diagnostics'
+arch=(aarch64)
+license=('GPL-2.0-only')
+depends=('linux-thorch=7.1.2-36' python kmod systemd thorch-bsp)
+options=('!strip' '!debug')
+
+package() {
+  local root="${startdir}/.."
+  local module="${THORCH_DUMP_MODULE:?Provide the compiled module path}"
+  local release
+  release="$(modinfo -F vermagic "$module")"
+  release="${release%% *}"
+  [[ "$release" == 7.1.2-thorch36 ]] || return 1
+  install -Dm644 "$module" "$pkgdir/usr/lib/modules/$release/extra/thorch-dump-watchdog.ko"
+  install -Dm755 "$root/bin/thorch-dump-debug" "$pkgdir/usr/bin/thorch-dump-debug"
+  install -Dm755 "$root/bin/thorch-dumpctl" "$pkgdir/usr/bin/thorch-dumpctl"
+  install -Dm644 "$root/packaging/thorch-dump-debug.service" "$pkgdir/usr/lib/systemd/system/thorch-dump-debug.service"
+  install -Dm644 "$root/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

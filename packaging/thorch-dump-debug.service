@@ -1,0 +1,12 @@
+[Unit]
+Description=Opt-in Thor hardlockup and panic firmware capture
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/thorch-dump-debug _start
+ExecStop=/usr/bin/thorch-dump-debug _stop
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

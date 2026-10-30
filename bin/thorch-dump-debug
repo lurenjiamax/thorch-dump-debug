@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Explicitly opt in to Thor hardlockup/panic firmware capture."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+
+STATE = Path('/run/thorch-dump-debug/state.json')
+PANIC = Path('/proc/sys/kernel/hardlockup_panic')
+MODULE = Path('/sys/module/thorch_dump_watchdog')
+
+
+def run(*args):
+    return subprocess.check_output(args, text=True).strip()
+
+
+def stop():
+    if not STATE.exists():
+        return
+    state = json.loads(STATE.read_text())
+    PANIC.write_text(state['hardlockup_panic'])
+    if MODULE.exists():
+        run('modprobe', '-r', 'thorch-dump-watchdog')
+    STATE.unlink()
+
+
+def start():
+    if STATE.exists() or MODULE.exists():
+        raise RuntimeError('Existing diagnostic state/module; stop it first')
+    flags = json.loads(run('thorch-dumpctl', 'status'))
+    if flags['oem_dump'] != 'enabledump' or 'full' not in flags['scm_dump']:
+        raise RuntimeError('Enable OEM dump and boot qcom_scm.download_mode=full first')
+    if Path('/proc/sys/kernel/nmi_watchdog').read_text().strip() != '1':
+        raise RuntimeError('Kernel hardlockup detector is not enabled')
+    STATE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    STATE.write_text(json.dumps({'hardlockup_panic': PANIC.read_text().strip()}))
+    try:
+        run('modprobe', 'thorch-dump-watchdog', 'armed=1', 'early_bite=1',
+            'suspend_timeout_ms=0')
+        PANIC.write_text('1')
+    except Exception:
+        stop()
+        raise
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('enable', 'disable', 'status', '_start', '_stop'))
+    action = parser.parse_args().action
+    if action == 'status':
+        print(json.dumps({'module_loaded': MODULE.exists(),
+                          'hardlockup_panic': PANIC.read_text().strip(),
+                          'service_enabled': subprocess.run(
+                              ['systemctl', 'is-enabled', '--quiet', 'thorch-dump-debug.service']).returncode == 0,
+                          'firmware': json.loads(run('thorch-dumpctl', 'status'))}, indent=2))
+        return
+    if os.geteuid() != 0:
+        raise RuntimeError('Run with sudo')
+    if action == 'enable':
+        run('systemctl', 'start', 'thorch-dump-debug.service')
+        run('systemctl', 'enable', 'thorch-dump-debug.service')
+    elif action == 'disable':
+        run('systemctl', 'disable', '--now', 'thorch-dump-debug.service')
+    elif action == '_start':
+        start()
+    else:
+        stop()
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        raise SystemExit(str(error))

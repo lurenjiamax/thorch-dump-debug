@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Thor OEM dump flag, compatible with Android port-bridge's nvdata1 record."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+import time
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('status', 'enable', 'disable'))
+    parser.add_argument('--partition', type=Path,
+                        default=Path('/dev/disk/by-partlabel/nvdata1'))
+    parser.add_argument('--backup-dir', type=Path,
+                        default=Path('/var/lib/thorch/dump-backups'))
+    args = parser.parse_args()
+    flags = os.O_RDONLY if args.action == 'status' else os.O_RDWR
+    fd = os.open(args.partition, flags | os.O_CLOEXEC)
+    try:
+        if not stat.S_ISBLK(os.fstat(fd).st_mode):
+            raise ValueError('expected a block partition')
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        record = os.pread(fd, 528, 0)
+        if (len(record) != 528 or
+                record[:16] != b'Quec-Head-nv1-1\0' or
+                record[496:512] != b'Quec-Tail-nv1-1\0'):
+            raise ValueError('unrecognized nvdata1 record; refusing access')
+        old = record[512:528]
+        known = (bytes(16), b'enabledump' + bytes(6), b'disabledump' + bytes(5))
+        if old not in known:
+            raise ValueError('unknown dump field; refusing to overwrite')
+        if args.action != 'status':
+            value = ('enabledump' if args.action == 'enable' else 'disabledump').encode()
+            value = value.ljust(16, b'\0')
+            if old != value:
+                args.backup_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                backup = args.backup_dir / (time.strftime('%Y%m%d-%H%M%S') +
+                                           '-' + str(time.time_ns()) + '.bin')
+                with backup.open('xb') as stream:
+                    os.chmod(backup, 0o600)
+                    stream.write(record)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                directory = os.open(args.backup_dir, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+                # Preserve all other OEM fields; port-bridge rewrites the record.
+                if os.pwrite(fd, value, 512) != 16:
+                    raise OSError('short write to dump field')
+                os.fsync(fd)
+                expected = record[:512] + value
+                if os.pread(fd, 528, 0) != expected:
+                    raise OSError(f'readback mismatch; original saved at {backup}')
+                record = expected
+                print(f'Original record saved: {backup}', file=sys.stderr)
+        scm = Path('/sys/module/qcom_scm/parameters/download_mode')
+        print(json.dumps({'oem_dump': record[512:528].rstrip(b'\0').decode() or 'unset',
+                          'scm_dump': scm.read_text().strip() if scm.exists() else 'unavailable',
+                          'record_sha256': hashlib.sha256(record).hexdigest()}, indent=2))
+    finally:
+        os.close(fd)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError) as error:
+        sys.exit(f'error: {error}')
