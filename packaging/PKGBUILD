@@ -1,6 +1,6 @@
 pkgname=thorch-dump-debug
 pkgver=0.1.0
-pkgrel=4
+pkgrel=5
 pkgdesc='Opt-in AYN Thor hardlockup and panic firmware dump diagnostics'
 arch=(aarch64)
 license=('GPL-2.0-only')
