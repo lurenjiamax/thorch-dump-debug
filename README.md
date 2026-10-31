@@ -1,25 +1,25 @@
 # Thor dump diagnostics
 
-Requires Qualcomm hypervisor watchdog support and the matching
-Thorch kernel. 
-
-Enable OEM capture with `sudo thorch-dumpctl enable`. Boot with
-`qcom_scm.download_mode=full` using the existing Thorch boot-debug configuration. The diagnostic service refuses to start without both.
-OEM changes are backed up by dumpctl; disabling the service does not change
-these separately managed persistent firmware settings.
+Requires Qualcomm hypervisor watchdog support and the matching Thorch kernel.
+Installing the package does not enable capture.
 
 ```sh
 sudo thorch-dump-debug enable
+sudo thorch-dump-debug softlockup on
+sudo thorch-dump-debug softlockup off
 sudo thorch-dump-debug status
 sudo thorch-dump-debug disable
 ```
 
-Enable explicitly starts the service and enables it for subsequent boots.
-Disable restores the previous hardlockup panic setting and unloads the module.
-No normal-sleep timer is armed: long sleep by itself does not trigger a dump.
-The kernel hardlockup detector must report a lockup for automatic panic capture;
-not every firmware/CPU hang is detectable. A false-positive detector report can
-also trigger capture. Softlockup panic is not enabled.
+`enable` prepares OEM dump and SCM full-dump settings and enables autostart.
+Reboot if prompted; otherwise capture starts immediately.
+
+Kernel panic and detected hardlockups trigger capture. Softlockup capture is
+off by default; `softlockup on|off` saves the choice and applies it immediately
+when capture is active. Long sleep alone does not trigger a dump.
+
+`disable` stops capture, unloads the module and restores previous settings.
+Reboot to apply restored boot settings. External boot-config edits are not overwritten.
 
 On capture, preserve USB connection and avoid restarting before acquisition.
 The expected firmware USB device is Qualcomm 05c6:900e. Collect using a host
@@ -30,7 +30,7 @@ capture is not required for every investigation.
 
 - `module/`: panic notifier and Qualcomm hypervisor watchdog SMC bridge.
 - `bin/thorch-dump-debug`: service control, prerequisite checks and restoration
-  of the previous `hardlockup_panic` value.
+  of previous detector, panic and firmware settings.
 - `bin/thorch-dumpctl`: OEM dump flag status/change, with original-record backup.
 - `packaging/`: one optional Arch package containing both tools and the module.
 
@@ -67,7 +67,4 @@ reported table. If transfer
 stalls or reports USB errors, stop it and preserve partial files; Reconnecting may require reproducing the
 fault. Log extraction requires the exact unstripped `vmlinux` from that boot.
 
-After diagnosis run `sudo thorch-dump-debug disable`. This stops capture and
-disables autostart, but intentionally leaves separately managed OEM/SCM flags
-unchanged. Use `sudo thorch-dumpctl disable` and revert the boot-debug SCM setting
-separately if firmware dump mode is no longer wanted.
+After diagnosis run `sudo thorch-dump-debug disable`.
