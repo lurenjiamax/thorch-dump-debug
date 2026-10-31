@@ -5,7 +5,6 @@
 #include <linux/module.h>
 #include <linux/panic_notifier.h>
 #include <linux/reboot.h>
-#include <linux/suspend.h>
 
 static bool armed;
 module_param(armed, bool, 0444);
@@ -13,10 +12,7 @@ static bool selfcheck;
 module_param(selfcheck, bool, 0444);
 static bool early_bite;
 module_param(early_bite, bool, 0444);
-static unsigned int suspend_timeout_ms;
-module_param(suspend_timeout_ms, uint, 0444);
 static bool panicked;
-static bool suspend_wdt_active;
 
 static int panic_restart(struct notifier_block *nb, unsigned long event, void *ptr);
 
@@ -50,7 +46,7 @@ static int panic_restart(struct notifier_block *nb, unsigned long event, void *p
 	 * Bit 1 in CONTROL must be set, as documented by downstream.
 	 */
 	ret = wdt_call(8, 60000, 60000);
-	if (!ret && !suspend_wdt_active)
+	if (!ret)
 		ret = wdt_call(5, 3, 0);
 	if (!ret)
 		ret = wdt_call(7, 0, 0);
@@ -74,47 +70,11 @@ static struct notifier_block restart_nb = {
 	.priority = 255,
 };
 
-static int suspend_probe(struct notifier_block *nb, unsigned long event, void *ptr)
-{
-	long ret;
-
-	if (!armed || !suspend_timeout_ms)
-		return NOTIFY_DONE;
-	if (event == PM_SUSPEND_PREPARE) {
-		ret = wdt_call(8, suspend_timeout_ms, suspend_timeout_ms);
-		if (!ret)
-			ret = wdt_call(5, 3, 0);
-		if (!ret)
-			ret = wdt_call(7, 0, 0);
-		if (ret) {
-			wdt_call(5, 2, 0);
-			pr_err("thorch-dump-watchdog: suspend arm failed: %ld\n", ret);
-			return NOTIFY_BAD;
-		}
-		suspend_wdt_active = true;
-		pr_info("thorch-dump-watchdog: suspend timeout armed %u ms\n",
-			suspend_timeout_ms);
-	} else if (event == PM_POST_SUSPEND && suspend_wdt_active) {
-		ret = wdt_call(5, 2, 0);
-		if (!ret)
-			suspend_wdt_active = false;
-		pr_info("thorch-dump-watchdog: resume watchdog disable=%ld\n", ret);
-	}
-	return NOTIFY_DONE;
-}
-
-static struct notifier_block suspend_nb = {
-	.notifier_call = suspend_probe,
-};
-
 static int __init dump_watchdog_init(void)
 {
 	struct arm_smccc_res result;
 	int ret;
 
-	if (suspend_timeout_ms &&
-	    (suspend_timeout_ms < 1000 || suspend_timeout_ms > 60000))
-		return -EINVAL;
 	if (arm_smccc_1_1_get_conduit() != SMCCC_CONDUIT_SMC)
 		return -ENODEV;
 	arm_smccc_smc(ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32,
@@ -148,12 +108,6 @@ static int __init dump_watchdog_init(void)
 		atomic_notifier_chain_unregister(&panic_notifier_list, &panic_nb);
 		return ret;
 	}
-	ret = register_pm_notifier(&suspend_nb);
-	if (ret) {
-		unregister_restart_handler(&restart_nb);
-		atomic_notifier_chain_unregister(&panic_notifier_list, &panic_nb);
-		return ret;
-	}
 	pr_info("thorch-dump-watchdog: registered armed=%d; no watchdog settings changed\n",
 		armed);
 	return 0;
@@ -161,9 +115,6 @@ static int __init dump_watchdog_init(void)
 
 static void __exit dump_watchdog_exit(void)
 {
-	unregister_pm_notifier(&suspend_nb);
-	if (suspend_wdt_active)
-		wdt_call(5, 2, 0);
 	unregister_restart_handler(&restart_nb);
 	atomic_notifier_chain_unregister(&panic_notifier_list, &panic_nb);
 }

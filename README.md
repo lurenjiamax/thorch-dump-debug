@@ -34,9 +34,7 @@ capture is not required for every investigation.
 - `bin/thorch-dumpctl`: OEM dump flag status/change, with original-record backup.
 - `packaging/`: one optional Arch package containing both tools and the module.
 
-The service uses `armed=1 early_bite=1 suspend_timeout_ms=0`. The module retains
-an experimental suspend timer interface for development; the supported service
-never enables it. Detection, panic, firmware capture and host acquisition are
+The service uses `armed=1 early_bite=1`. Detection, panic, firmware capture and host acquisition are
 separate stages. `status` confirms configuration, not that every hang is captured.
 
 ## Kernel compatibility

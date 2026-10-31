@@ -36,8 +36,7 @@ def start():
     STATE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     STATE.write_text(json.dumps({'hardlockup_panic': PANIC.read_text().strip()}))
     try:
-        run('modprobe', 'thorch-dump-watchdog', 'armed=1', 'early_bite=1',
-            'suspend_timeout_ms=0')
+        run('modprobe', 'thorch-dump-watchdog', 'armed=1', 'early_bite=1')
         PANIC.write_text('1')
     except Exception:
         stop()
