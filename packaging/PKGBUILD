@@ -1,26 +1,17 @@
 pkgname=thorch-dump-debug
 pkgver=0.1.0
-pkgrel=5
+pkgrel=7
 pkgdesc='Opt-in AYN Thor hardlockup and panic firmware dump diagnostics'
 arch=(aarch64)
 license=('GPL-2.0-only')
-_module="${THORCH_DUMP_MODULE:?Provide the compiled module path}"
-_release="$(modinfo -F vermagic "$_module")"
-_release="${_release%% *}"
-# Thorch LOCALVERSION convention maps kernel-release to the pacman version.
-# Nonstandard package revisions can supply their exact version explicitly.
-_kernel_version="${THORCH_KERNEL_PACKAGE_VERSION:-${_release/-thorch/-}}"
-depends=("linux-thorch=${_kernel_version}" python kmod systemd thorch-bsp)
+depends=(linux-thorch linux-thorch-headers dkms python kmod systemd thorch-bsp)
 options=('!strip' '!debug')
 
 package() {
   local root="${startdir}/.."
-  local module="${THORCH_DUMP_MODULE:?Provide the compiled module path}"
-  local release
-  release="$(modinfo -F vermagic "$module")"
-  release="${release%% *}"
-  [[ "$release" == "$_release" ]] || return 1
-  install -Dm644 "$module" "$pkgdir/usr/lib/modules/$release/extra/thorch-dump-watchdog.ko"
+  local dest="$pkgdir/usr/src/thorch-dump-debug-$pkgver"
+  install -Dm644 "$root/module/dkms.conf" "$dest/dkms.conf"
+  install -m644 "$root/module/Makefile" "$root/module/thorch-dump-watchdog.c" "$dest/"
   install -Dm755 "$root/bin/thorch-dump-debug" "$pkgdir/usr/bin/thorch-dump-debug"
   install -Dm755 "$root/bin/thorch-dumpctl" "$pkgdir/usr/bin/thorch-dumpctl"
   install -Dm644 "$root/packaging/thorch-dump-debug.service" "$pkgdir/usr/lib/systemd/system/thorch-dump-debug.service"

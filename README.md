@@ -41,11 +41,14 @@ separate stages. `status` confirms configuration, not that every hang is capture
 
 The module must match the **running device kernel**.
 
-The package records an exact `linux-thorch` dependency.
+The package installs DKMS source and depends on matching kernel headers.
+Kernel upgrades automatically rebuild the module; no exact kernel package
+revision is pinned. Installing/building the module does not enable capture.
 
 ## Build and package
 
-Build with `build-module.sh` on Thor.
+Package `packaging/PKGBUILD` without a precompiled module. DKMS builds on the
+target device; `build-module.sh` remains available for direct build diagnostics.
 
 Install with
 `sudo pacman -U /path/to/thorch-dump-debug.pkg.tar.zst`, then follow the explicit
